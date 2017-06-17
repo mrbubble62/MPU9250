@@ -79,7 +79,9 @@ MPU9250::MPU9250(uint8_t csPin, spi_mosi_pin pin){
 int MPU9250::begin(mpu9250_accel_range accelRange, mpu9250_gyro_range gyroRange){
     uint8_t buff[3];
     uint8_t data[7];
-
+	_accelRange = accelRange;
+	_gyroRange = gyroRange;
+	_mag_coef = MAG_LSB;
     if( _useSPI ){ // using SPI for communication
 
         // setting CS pin to output
@@ -309,75 +311,8 @@ int MPU9250::begin(mpu9250_accel_range accelRange, mpu9250_gyro_range gyroRange)
         return -1;
     }
 
-    /* setup the accel and gyro ranges */
-    switch(accelRange) {
-
-        case ACCEL_RANGE_2G:
-            // setting the accel range to 2G
-            if( !writeRegister(ACCEL_CONFIG,ACCEL_FS_SEL_2G) ){
-                return -1;
-            }
-            _accelScale = G * 2.0f/32767.5f; // setting the accel scale to 2G
-            break;
-
-        case ACCEL_RANGE_4G:
-            // setting the accel range to 4G
-            if( !writeRegister(ACCEL_CONFIG,ACCEL_FS_SEL_4G) ){
-                return -1;
-            }
-            _accelScale = G * 4.0f/32767.5f; // setting the accel scale to 4G
-            break;
-
-        case ACCEL_RANGE_8G:
-            // setting the accel range to 8G
-            if( !writeRegister(ACCEL_CONFIG,ACCEL_FS_SEL_8G) ){
-                return -1;
-            }
-            _accelScale = G * 8.0f/32767.5f; // setting the accel scale to 8G
-            break;
-
-        case ACCEL_RANGE_16G:
-            // setting the accel range to 16G
-            if( !writeRegister(ACCEL_CONFIG,ACCEL_FS_SEL_16G) ){
-                return -1;
-            }
-            _accelScale = G * 16.0f/32767.5f; // setting the accel scale to 16G
-            break;
-    }
-
-    switch(gyroRange) {
-        case GYRO_RANGE_250DPS:
-            // setting the gyro range to 250DPS
-            if( !writeRegister(GYRO_CONFIG,GYRO_FS_SEL_250DPS) ){
-                return -1;
-            }
-            _gyroScale = 250.0f/32767.5f * _d2r; // setting the gyro scale to 250DPS
-            break;
-
-        case GYRO_RANGE_500DPS:
-            // setting the gyro range to 500DPS
-            if( !writeRegister(GYRO_CONFIG,GYRO_FS_SEL_500DPS) ){
-                return -1;
-            }
-            _gyroScale = 500.0f/32767.5f * _d2r; // setting the gyro scale to 500DPS
-            break;
-
-        case GYRO_RANGE_1000DPS:
-            // setting the gyro range to 1000DPS
-            if( !writeRegister(GYRO_CONFIG,GYRO_FS_SEL_1000DPS) ){
-                return -1;
-            }
-            _gyroScale = 1000.0f/32767.5f * _d2r; // setting the gyro scale to 1000DPS
-            break;
-
-        case GYRO_RANGE_2000DPS:
-            // setting the gyro range to 2000DPS
-            if( !writeRegister(GYRO_CONFIG,GYRO_FS_SEL_2000DPS) ){
-                return -1;
-            }
-            _gyroScale = 2000.0f/32767.5f * _d2r; // setting the gyro scale to 2000DPS
-            break;
-    }
+	setAccelRange(accelRange);
+	setGyroRange(gyroRange);
 
     // enable I2C master mode
     if( !writeRegister(USER_CTRL,I2C_MST_EN) ){
@@ -410,9 +345,12 @@ int MPU9250::begin(mpu9250_accel_range accelRange, mpu9250_gyro_range gyroRange)
 
     // read the AK8963 ASA registers and compute magnetometer scale factors
     readAK8963Registers(AK8963_ASA,sizeof(buff),&buff[0]);
-    _magScaleX = ((((float)buff[0]) - 128.0f)/(256.0f) + 1.0f) * 4912.0f / 32760.0f; // micro Tesla
-    _magScaleY = ((((float)buff[1]) - 128.0f)/(256.0f) + 1.0f) * 4912.0f / 32760.0f; // micro Tesla
-    _magScaleZ = ((((float)buff[2]) - 128.0f)/(256.0f) + 1.0f) * 4912.0f / 32760.0f; // micro Tesla 
+	_magCalX = ((((float)buff[0]) - 128.0f)/(256.0f) + 1.0f) * 4912.0f / 32760.0f; // micro Tesla
+	_magCalY = ((((float)buff[1]) - 128.0f)/(256.0f) + 1.0f) * 4912.0f / 32760.0f; // micro Tesla
+	_magCalZ = ((((float)buff[2]) - 128.0f)/(256.0f) + 1.0f) * 4912.0f / 32760.0f; // micro Tesla 
+	_magScaleX = _magCalX;
+	_magScaleY = _magCalY;
+	_magScaleZ = _magCalZ;
 
     // set AK8963 to Power Down
     if( !writeAK8963Register(AK8963_CNTL1,AK8963_PWR_DOWN) ){
@@ -556,7 +494,6 @@ int MPU9250::enableInt(bool enable){
     return 0; 
 }
 
-
 /* get accelerometer data given pointers to store the three values, return data as counts */
 void MPU9250::getAccelCounts(int16_t* ax, int16_t* ay, int16_t* az){
     uint8_t buff[6];
@@ -631,7 +568,11 @@ void MPU9250::getMagCounts(int16_t* hx, int16_t* hy, int16_t* hz){
         *hy = 0;
         *hz = 0;
     }
+
+
 }
+
+double MPU9250::_mag_coef = MAG_LSB;
 
 /* get magnetometer data given pointers to store the three values */
 void MPU9250::getMag(float* hx, float* hy, float* hz){
@@ -639,10 +580,16 @@ void MPU9250::getMag(float* hx, float* hy, float* hz){
 
     getMagCounts(&mag[0], &mag[1], &mag[2]);
 
-    *hx = ((float) mag[0]) * _magScaleX; // typecast and scale to values
-    *hy = ((float) mag[1]) * _magScaleY;
-    *hz = ((float) mag[2]) * _magScaleZ;
+
+	*hx = (float)mag[0] - _magBiasX;  // get actual magnetometer value, this depends on scale being set
+	*hy = (float)mag[1] - _magBiasY;
+	*hz = (float)mag[2] - _magBiasZ;
+	*hx *= _magScaleX;
+	*hy *= _magScaleY;
+	*hz *= _magScaleZ;
+
 }
+
 
 /* get temperature data given pointer to store the value, return data as counts */
 void MPU9250::getTempCounts(int16_t* t){
@@ -695,13 +642,19 @@ void MPU9250::getMotion6(float* ax, float* ay, float* az, float* gx, float* gy, 
 
     getMotion6Counts(&accel[0], &accel[1], &accel[2], &gyro[0], &gyro[1], &gyro[2]);
 
-    *ax = ((float) accel[0]) * _accelScale; // typecast and scale to values
-    *ay = ((float) accel[1]) * _accelScale;
-    *az = ((float) accel[2]) * _accelScale;
+	*ax = ((float)accel[0]) * _accelScale; // typecast and scale to values
+	*ay = ((float)accel[1]) * _accelScale;
+	*az = ((float)accel[2]) * _accelScale;
+	*ax -= _accelBiasX;
+	*ay -= _accelBiasY;
+	*az -= _accelBiasZ;
 
-    *gx = ((float) gyro[0]) * _gyroScale;
-    *gy = ((float) gyro[1]) * _gyroScale;
-    *gz = ((float) gyro[2]) * _gyroScale;
+	*gx = ((float)gyro[0]) * _gyroScale;
+	*gy = ((float)gyro[1]) * _gyroScale;
+	*gz = ((float)gyro[2]) * _gyroScale;
+	*gx -= _gyroBiasX;
+	*gy -= _gyroBiasY;
+	*gz -= _gyroBiasZ;
 }
 
 /* get accelerometer, gyro and temperature data given pointers to store values, return data as counts */
@@ -739,13 +692,19 @@ void MPU9250::getMotion7(float* ax, float* ay, float* az, float* gx, float* gy, 
 
     getMotion7Counts(&accel[0], &accel[1], &accel[2], &gyro[0], &gyro[1], &gyro[2], &tempCount);
 
-    *ax = ((float) accel[0]) * _accelScale; // typecast and scale to values
-    *ay = ((float) accel[1]) * _accelScale;
-    *az = ((float) accel[2]) * _accelScale;
+	*ax = ((float)accel[0]) * _accelScale; // typecast and scale to values
+	*ay = ((float)accel[1]) * _accelScale;
+	*az = ((float)accel[2]) * _accelScale;
+	*ax -= _accelBiasX;
+	*ay -= _accelBiasY;
+	*az -= _accelBiasZ;
 
-    *gx = ((float) gyro[0]) * _gyroScale;
-    *gy = ((float) gyro[1]) * _gyroScale;
-    *gz = ((float) gyro[2]) * _gyroScale;
+	*gx = ((float)gyro[0]) * _gyroScale;
+	*gy = ((float)gyro[1]) * _gyroScale;
+	*gz = ((float)gyro[2]) * _gyroScale;
+	*gx -= _gyroBiasX;
+	*gy -= _gyroBiasY;
+	*gz -= _gyroBiasZ;
 
     *t = (( ((float) tempCount) - _tempOffset )/_tempScale) + _tempOffset; 
 }
@@ -787,17 +746,27 @@ void MPU9250::getMotion9(float* ax, float* ay, float* az, float* gx, float* gy, 
 
     getMotion9Counts(&accel[0], &accel[1], &accel[2], &gyro[0], &gyro[1], &gyro[2], &mag[0], &mag[1], &mag[2]);
 
-    *ax = ((float) accel[0]) * _accelScale; // typecast and scale to values
-    *ay = ((float) accel[1]) * _accelScale;
-    *az = ((float) accel[2]) * _accelScale;
+	*ax = ((float)accel[0]) * _accelScale; // typecast and scale to values
+	*ay = ((float)accel[1]) * _accelScale;
+	*az = ((float)accel[2]) * _accelScale;
+	*ax -= _accelBiasX;
+	*ay -= _accelBiasY;
+	*az -= _accelBiasZ;
 
-    *gx = ((float) gyro[0]) * _gyroScale;
-    *gy = ((float) gyro[1]) * _gyroScale;
-    *gz = ((float) gyro[2]) * _gyroScale;
+	*gx = ((float)gyro[0]) * _gyroScale;
+	*gy = ((float)gyro[1]) * _gyroScale;
+	*gz = ((float)gyro[2]) * _gyroScale;
+	*gx -= _gyroBiasX;
+	*gy -= _gyroBiasY;
+	*gz -= _gyroBiasZ;
 
-    *hx = ((float) mag[0]) * _magScaleX;
-    *hy = ((float) mag[1]) * _magScaleY;
-    *hz = ((float) mag[2]) * _magScaleZ;
+	*hx = (float)mag[0] - _magBiasX;  // get actual magnetometer value, this depends on scale being set
+	*hy = (float)mag[1] - _magBiasY;
+	*hz = (float)mag[2] - _magBiasZ;
+	*hx *= _magScaleX;
+	*hy *= _magScaleY;
+	*hz *= _magScaleZ;
+
 }
 
 /* get accelerometer, magnetometer, and temperature data given pointers to store values, return data as counts */
@@ -839,20 +808,86 @@ void MPU9250::getMotion10(float* ax, float* ay, float* az, float* gx, float* gy,
 
     getMotion10Counts(&accel[0], &accel[1], &accel[2], &gyro[0], &gyro[1], &gyro[2], &mag[0], &mag[1], &mag[2], &tempCount);
 
-    *ax = ((float) accel[0]) * _accelScale; // typecast and scale to values
-    *ay = ((float) accel[1]) * _accelScale;
-    *az = ((float) accel[2]) * _accelScale;
+	*ax = ((float)accel[0]) * _accelScale; // typecast and scale to values
+	*ay = ((float)accel[1]) * _accelScale;
+	*az = ((float)accel[2]) * _accelScale;
+	*ax -= _accelBiasX;
+	*ay -= _accelBiasY;
+	*az -= _accelBiasZ;
 
-    *gx = ((float) gyro[0]) * _gyroScale;
-    *gy = ((float) gyro[1]) * _gyroScale;
-    *gz = ((float) gyro[2]) * _gyroScale;
+	*gx = ((float)gyro[0]) * _gyroScale;
+	*gy = ((float)gyro[1]) * _gyroScale;
+	*gz = ((float)gyro[2]) * _gyroScale;
+	*gx -= _gyroBiasX;
+	*gy -= _gyroBiasY;
+	*gz -= _gyroBiasZ;
 
-    *hx = ((float) mag[0]) * _magScaleX;
-    *hy = ((float) mag[1]) * _magScaleY;
-    *hz = ((float) mag[2]) * _magScaleZ;
+	*hx = (float)mag[0] - _magBiasX;  // get actual magnetometer value, this depends on scale being set
+	*hy = (float)mag[1] - _magBiasY;
+	*hz = (float)mag[2] - _magBiasZ;
+	*hx *= _magScaleX;
+	*hy *= _magScaleY;
+	*hz *= _magScaleZ;
 
     *t = (( ((float) tempCount) - _tempOffset )/_tempScale) + _tempOffset; 
 }
+
+void MPU9250::getAccelBias(float * Bias)
+{
+	Bias[0] = _accelBiasX;
+	Bias[1] = _accelBiasY;
+	Bias[2] = _accelBiasZ;
+}
+void MPU9250::getGyroBias(float * Bias)
+{
+	Bias[0] = _gyroBiasX;
+	Bias[1] = _gyroBiasY;
+	Bias[2] = _gyroBiasZ;
+}
+
+void MPU9250::getMagBias(float * Bias)
+{
+	Bias[0] = _magBiasX;
+	Bias[1] = _magBiasY;
+	Bias[2] = _magBiasZ;
+}
+
+void MPU9250::getMagScale(float * scale)
+{
+	scale[0] = _magScaleX;
+	scale[1] = _magScaleY;
+	scale[2] = _magScaleZ;
+}
+
+void MPU9250::setMagScale(float Scale[3])
+{
+	_magScaleX = Scale[0];
+	_magScaleY = Scale[1];
+	_magScaleZ = Scale[2];
+}
+
+
+void MPU9250::setAccelBias(float Bias[3])
+{
+	_accelBiasX = Bias[0];
+	_accelBiasY = Bias[1];
+	_accelBiasZ = Bias[2];
+}
+
+void MPU9250::setGyroBias(float Bias[3])
+{
+	_gyroBiasX = Bias[0];
+	_gyroBiasY = Bias[1];
+	_gyroBiasZ = Bias[2];
+}
+
+void MPU9250::setMagBias(float Bias[3])
+{
+	_magBiasX = Bias[0];// *_mag_coef;// *_magCalX;
+	_magBiasY = Bias[1];// *_mag_coef;// *_magCalY;
+	_magBiasZ = Bias[2];// *_mag_coef;// *_magCalZ;
+}
+
 
 /* writes a byte to MPU9250 register given a register address and data */
 bool MPU9250::writeRegister(uint8_t subAddress, uint8_t data){
@@ -1185,6 +1220,162 @@ uint8_t MPU9250::whoAmIAK8963(){
 
     // return the register value
     return buff[0];
+}
+
+int MPU9250::setGyroRange(mpu9250_gyro_range gyroRange)
+{
+	switch (gyroRange) {
+	case GYRO_RANGE_250DPS:
+		// setting the gyro range to 250DPS
+		if (!writeRegister(GYRO_CONFIG, GYRO_FS_SEL_250DPS)) {
+			return -1;
+		}
+		_gyroScale = 250.0f / 32767.5f * _d2r; // setting the gyro scale to 250DPS
+		break;
+
+	case GYRO_RANGE_500DPS:
+		// setting the gyro range to 500DPS
+		if (!writeRegister(GYRO_CONFIG, GYRO_FS_SEL_500DPS)) {
+			return -1;
+		}
+		_gyroScale = 500.0f / 32767.5f * _d2r; // setting the gyro scale to 500DPS
+		break;
+
+	case GYRO_RANGE_1000DPS:
+		// setting the gyro range to 1000DPS
+		if (!writeRegister(GYRO_CONFIG, GYRO_FS_SEL_1000DPS)) {
+			return -1;
+		}
+		_gyroScale = 1000.0f / 32767.5f * _d2r; // setting the gyro scale to 1000DPS
+		break;
+
+	case GYRO_RANGE_2000DPS:
+		// setting the gyro range to 2000DPS
+		if (!writeRegister(GYRO_CONFIG, GYRO_FS_SEL_2000DPS)) {
+			return -1;
+		}
+		_gyroScale = 2000.0f / 32767.5f * _d2r; // setting the gyro scale to 2000DPS
+		break;
+	}
+	return 1;
+}
+
+int MPU9250::setAccelRange(mpu9250_accel_range accelRange)
+{
+	switch (accelRange) {
+	case ACCEL_RANGE_2G:
+		// setting the accel range to 2G
+		if (!writeRegister(ACCEL_CONFIG, ACCEL_FS_SEL_2G)) {
+			return -1;
+		}
+		_accelScale = G * 2.0f / 32767.5f; // setting the accel scale to 2G
+		break;
+
+	case ACCEL_RANGE_4G:
+		// setting the accel range to 4G
+		if (!writeRegister(ACCEL_CONFIG, ACCEL_FS_SEL_4G)) {
+			return -1;
+		}
+		_accelScale = G * 4.0f / 32767.5f; // setting the accel scale to 4G
+		break;
+
+	case ACCEL_RANGE_8G:
+		// setting the accel range to 8G
+		if (!writeRegister(ACCEL_CONFIG, ACCEL_FS_SEL_8G)) {
+			return -1;
+		}
+		_accelScale = G * 8.0f / 32767.5f; // setting the accel scale to 8G
+		break;
+
+	case ACCEL_RANGE_16G:
+		// setting the accel range to 16G
+		if (!writeRegister(ACCEL_CONFIG, ACCEL_FS_SEL_16G)) {
+			return -1;
+		}
+		_accelScale = G * 16.0f / 32767.5f; // setting the accel scale to 16G
+		break;
+	}
+	return 1;
+}
+
+
+// Accelerometer and gyroscope self test; check calibration wrt factory settings
+void MPU9250::MPU9250SelfTest(float * destination) // Should return percent deviation from factory trim values, +/- 14 or less deviation is a pass
+{
+	//	uint8_t rawData[6] = { 0, 0, 0, 0, 0, 0 };
+	uint8_t selfTest[6];
+	int16_t gAvg[3], aAvg[3], aSTAvg[3], gSTAvg[3];
+	float factoryTrim[6];
+	uint8_t FS = 0; //
+	uint8_t buff[14];
+
+	setFilt(DLPF_BANDWIDTH_10HZ, 0);
+	setAccelRange(ACCEL_RANGE_2G);
+	setGyroRange(GYRO_RANGE_250DPS);
+
+	for (int ii = 0; ii < 200; ii++) {  // get average current values of gyro and acclerometer
+		readRegisters(ACCEL_OUT, sizeof(buff), &buff[0]); // grab the data from the MPU9250
+		aAvg[0] += (((int16_t)buff[0]) << 8) | buff[1];  // combine into 16 bit values
+		aAvg[1] += (((int16_t)buff[2]) << 8) | buff[3];
+		aAvg[2] += (((int16_t)buff[4]) << 8) | buff[5];
+		gAvg[0] += (((int16_t)buff[8]) << 8) | buff[9];
+		gAvg[1] += (((int16_t)buff[10]) << 8) | buff[11];
+		gAvg[2] += (((int16_t)buff[12]) << 8) | buff[13];
+		delay(5);
+	}
+
+	for (int ii = 0; ii < 3; ii++) {  // Get average of 200 values and store as average current readings
+		aAvg[ii] /= 200;
+		gAvg[ii] /= 200;
+	}
+
+	// Configure the accelerometer for self-test
+	writeRegister(GYRO_CONFIG, 0xE0); // Enable self test on all three axes and set accelerometer range to +/- 2 g
+	writeRegister(ACCEL_CONFIG, 0xE0); // Enable self test on all three axes and set gyro range to +/- 250 degrees/s
+	delay(25);  // Delay a while to let the device stabilize
+
+	for (int ii = 0; ii < 200; ii++) {  // get average self-test values of gyro and acclerometer
+		readRegisters(ACCEL_OUT, sizeof(buff), &buff[0]); // grab the data from the MPU9250
+		aSTAvg[0] += (((int16_t)buff[0]) << 8) | buff[1];  // combine into 16 bit values
+		aSTAvg[1] += (((int16_t)buff[2]) << 8) | buff[3];
+		aSTAvg[2] += (((int16_t)buff[4]) << 8) | buff[5];
+		gSTAvg[0] += (((int16_t)buff[8]) << 8) | buff[9];
+		gSTAvg[1] += (((int16_t)buff[10]) << 8) | buff[11];
+		gSTAvg[2] += (((int16_t)buff[12]) << 8) | buff[13];
+		delay(5);
+	}
+
+	for (int ii = 0; ii < 3; ii++) {  // Get average of 200 values and store as average self-test readings
+		aSTAvg[ii] /= 200;
+		gSTAvg[ii] /= 200;
+	}
+
+	// Configure the gyro and accelerometer for normal operation
+	setAccelRange(_accelRange);
+	setGyroRange(_gyroRange);
+
+	delay(25);  // Delay a while to let the device stabilize
+
+				// Retrieve accelerometer and gyro factory Self-Test Code from USR_Reg
+	readRegisters(SELF_TEST_GYRO, 3, &selfTest[0]);// accel self-test results
+	readRegisters(SELF_TEST_ACCEL, 3, &selfTest[3]);// gyro self-test results
+													// Retrieve factory self-test value from self-test code reads
+	factoryTrim[0] = (float)(2620 / 1 << FS)*(pow(1.01, ((float)selfTest[0] - 1.0))); // FT[Xa] factory trim calculation
+	factoryTrim[1] = (float)(2620 / 1 << FS)*(pow(1.01, ((float)selfTest[1] - 1.0))); // FT[Ya] factory trim calculation
+	factoryTrim[2] = (float)(2620 / 1 << FS)*(pow(1.01, ((float)selfTest[2] - 1.0))); // FT[Za] factory trim calculation
+	factoryTrim[3] = (float)(2620 / 1 << FS)*(pow(1.01, ((float)selfTest[3] - 1.0))); // FT[Xg] factory trim calculation
+	factoryTrim[4] = (float)(2620 / 1 << FS)*(pow(1.01, ((float)selfTest[4] - 1.0))); // FT[Yg] factory trim calculation
+	factoryTrim[5] = (float)(2620 / 1 << FS)*(pow(1.01, ((float)selfTest[5] - 1.0))); // FT[Zg] factory trim calculation
+	// Report results as a ratio of (STR - FT)/FT; the change from Factory Trim of the Self-Test Response
+	for (int i = 0; i < 3; i++) {
+		destination[i] = 100.0*((float)(aSTAvg[i] - aAvg[i])) / factoryTrim[i];   // Report percent differences
+		destination[i + 3] = 100.0*((float)(gSTAvg[i] - gAvg[i])) / factoryTrim[i + 3]; // Report percent differences
+	}
+}
+
+long MPU9250::RawToGauss(int16_t data)
+{
+	return (((long)data + 128) * 6000) / 256;
 }
 
 #endif
