@@ -580,14 +580,12 @@ void MPU9250::getMag(float* hx, float* hy, float* hz){
 
     getMagCounts(&mag[0], &mag[1], &mag[2]);
 
-
 	*hx = (float)mag[0] - _magBiasX;  // get actual magnetometer value, this depends on scale being set
 	*hy = (float)mag[1] - _magBiasY;
 	*hz = (float)mag[2] - _magBiasZ;
 	*hx *= _magScaleX;
 	*hy *= _magScaleY;
 	*hz *= _magScaleZ;
-
 }
 
 
@@ -883,9 +881,9 @@ void MPU9250::setGyroBias(float Bias[3])
 
 void MPU9250::setMagBias(float Bias[3])
 {
-	_magBiasX = Bias[0];// *_mag_coef;// *_magCalX;
-	_magBiasY = Bias[1];// *_mag_coef;// *_magCalY;
-	_magBiasZ = Bias[2];// *_mag_coef;// *_magCalZ;
+	_magBiasX = Bias[0];
+	_magBiasY = Bias[1];
+	_magBiasZ = Bias[2];
 }
 
 
@@ -1302,7 +1300,6 @@ int MPU9250::setAccelRange(mpu9250_accel_range accelRange)
 // Accelerometer and gyroscope self test; check calibration wrt factory settings
 void MPU9250::MPU9250SelfTest(float * destination) // Should return percent deviation from factory trim values, +/- 14 or less deviation is a pass
 {
-	//	uint8_t rawData[6] = { 0, 0, 0, 0, 0, 0 };
 	uint8_t selfTest[6];
 	int16_t gAvg[3], aAvg[3], aSTAvg[3], gSTAvg[3];
 	float factoryTrim[6];
@@ -1376,6 +1373,70 @@ void MPU9250::MPU9250SelfTest(float * destination) // Should return percent devi
 long MPU9250::RawToGauss(int16_t data)
 {
 	return (((long)data + 128) * 6000) / 256;
+}
+
+void MPU9250::startMagCal()
+{
+	flagCalibrate = true;
+	// reset bias to zero
+	_magBiasX = 0; _magBiasY = 0; _magBiasZ = 0;
+	// set scale to unity
+	_magScaleX = 1; _magScaleY = 1; _magScaleZ = 1;
+	// initialize min max  
+	mmax[0] = -9999; mmax[1] = -9999; mmax[2] = -9999;
+	mmin[0] = 9999; mmin[1] = 9999; mmin[2] = 9999;
+	_calCount = 0;
+}
+
+// update min max counts
+void MPU9250::updateMagCal()
+{
+	if (flagCalibrate) {
+		int16_t mx, my, mz;
+		getMagCounts(&mx, &my, &mz);
+		if (mx > mmax[0]) { mmax[0] = mx; }
+		if (my > mmax[1]) { mmax[1] = my; }
+		if (mz > mmax[2]) { mmax[2] = mz; }
+		if (mx < mmin[0]) { mmin[0] = mx; }
+		if (my < mmin[1]) { mmin[1] = my; }
+		if (mz < mmin[2]) { mmin[2] = mz; }
+		_calCount++;
+	}
+}
+
+// calculate new bias and scale
+void MPU9250::stopMagCal()
+{
+	float magScale[3], magBias[3];
+	if (flagCalibrate) {
+		// Get hard iron correction
+		magBias[0] = (mmax[0] + mmin[0]) / 2;
+		magBias[1] = (mmax[1] + mmin[1]) / 2;
+		magBias[2] = (mmax[2] + mmin[2]) / 2;
+		// Get soft iron correction estimate
+		magScale[0] = (mmax[0] - mmin[0]) / 2;
+		magScale[1] = (mmax[1] - mmin[1]) / 2;
+		magScale[2] = (mmax[2] - mmin[2]) / 2;
+		float avg_rad = magScale[0] + magScale[1] + magScale[2];
+		avg_rad /= 3.0;
+		magScale[0] = avg_rad / magScale[0];
+		magScale[1] = avg_rad / magScale[1];
+		magScale[2] = avg_rad / magScale[2];
+		setMagBias(magBias);
+		setMagScale(magScale);
+		flagCalibrate = false;
+	}
+}
+
+void MPU9250::getMinMax(int16_t min[3], int16_t max[3])
+{
+	min[0] = mmin[0]; min[1] = mmin[1]; min[2] = mmin[2];
+	max[0] = mmax[0]; max[1] = mmax[1]; max[2] = mmax[2];
+}
+
+int MPU9250::getCalCount()
+{
+	return _calCount;
 }
 
 #endif
