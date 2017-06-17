@@ -28,6 +28,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include "Arduino.h"
 #include "i2c_t3.h"  // I2C library
 
+#define ACC_LSB (0.0000610350)//[G / LSB]
+#define GYRO_LSB (0.007630) //[(degree / s) / LSB]
+#define MAG_LSB (0.150) //[uT / LSB]
+
 #ifndef SPI_MOSI_PIN
 #define SPI_MOSI_PIN
     // Teensy 3.0 || Teensy 3.1/3.2
@@ -89,6 +93,11 @@ enum mpu9250_dlpf_bandwidth
     DLPF_BANDWIDTH_5HZ
 };
 
+enum Mscale {
+	MFS_14BITS = 0, // 0.6 mG per LSB
+	MFS_16BITS      // 0.15 mG per LSB
+};
+
 class MPU9250{
     public:
         MPU9250(uint8_t address, uint8_t bus);
@@ -116,7 +125,26 @@ class MPU9250{
         void getMotion7Counts(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz, int16_t* t);
         void getMotion9Counts(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz, int16_t* hx, int16_t* hy, int16_t* hz);
         void getMotion10Counts(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz, int16_t* hx, int16_t* hy, int16_t* hz, int16_t* t);
+
+		void getAccelBias(float * Bias);
+		void getGyroBias(float * Bias);
+		void getMagBias(float * Bias);
+		void getMagScale(float * scale);
+
+		void setAccelBias(float Bias[3]);
+		void setGyroBias(float Bias[3]);
+		void setMagBias(float Bias[3]);
+		void setMagScale(float Scale[3]);
+
+		void MPU9250SelfTest(float * destination);
+		float SelfTest[6];
+		#define SELF_TEST_GYRO 0x00
+		#define SELF_TEST_ACCEL 0x0D
+
+		long RawToGauss(int16_t data);
+
     private:
+		float mRes;  // mag resolution per LSB 
         uint8_t _address;
         uint8_t _bus;
         i2c_pins _pins;
@@ -128,9 +156,26 @@ class MPU9250{
         bool _useSPIHS;
         float _accelScale;
         float _gyroScale;
-        float _magScaleX, _magScaleY, _magScaleZ;
+		mpu9250_accel_range _accelRange;
+		mpu9250_gyro_range _gyroRange;
         const float _tempScale = 333.87f;
         const float _tempOffset = 21.0f;
+		float _accelBiasX = 0;
+		float _accelBiasY = 0;
+		float _accelBiasZ = 0;
+		float _gyroBiasX = 0;
+		float _gyroBiasY = 0;
+		float _gyroBiasZ = 0;
+		float _magBiasX = 0;
+		float _magBiasY = 0;
+		float _magBiasZ = 0;
+		float _magScaleX = 1;
+		float _magScaleY = 1;
+		float _magScaleZ = 1;
+		float _magCalX;
+		float _magCalY;
+		float _magCalZ;
+		static double _mag_coef;
 
         // SPI constants
         const uint8_t SPI_READ = 0x80;
@@ -229,6 +274,10 @@ class MPU9250{
         const int16_t tX[3] = {0,  1,  0}; 
         const int16_t tY[3] = {1,  0,  0};
         const int16_t tZ[3] = {0,  0, -1};
+
+		// for self test
+		int setGyroRange(mpu9250_gyro_range gyroRange);
+		int setAccelRange(mpu9250_accel_range accelRange);
 
         bool writeRegister(uint8_t subAddress, uint8_t data);
         void readRegisters(uint8_t subAddress, uint8_t count, uint8_t* dest);
