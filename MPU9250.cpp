@@ -1434,7 +1434,7 @@ void MPU9250::getMinMax(int16_t min[3], int16_t max[3])
 	max[0] = mmax[0]; max[1] = mmax[1]; max[2] = mmax[2];
 }
 
-int MPU9250::getCalCount()
+long MPU9250::getCalCount()
 {
 	return _calCount;
 }

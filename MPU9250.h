@@ -145,7 +145,7 @@ class MPU9250{
 
 		// calibration
 		void startMagCal(); // reset calibration
-		int getCalCount(); //number of time updateMagCal() has been called
+		long getCalCount(); //number of time updateMagCal() has been called
 		void updateMagCal(); // read mag counts to mmin mmax
 		void stopMagCal(); // save new bias and scale values
 		void getMinMax(int16_t min[3], int16_t max[3]);
@@ -182,7 +182,7 @@ class MPU9250{
 		float _magCalX;
 		float _magCalY;
 		float _magCalZ;
-		int _calCount = 0;
+		long _calCount = 0;
 		static double _mag_coef;
 
         // SPI constants
