@@ -143,6 +143,13 @@ class MPU9250{
 
 		long RawToGauss(int16_t data);
 
+		// calibration
+		void startMagCal(); // reset calibration
+		int getCalCount(); //number of time updateMagCal() has been called
+		void updateMagCal(); // read mag counts to mmin mmax
+		void stopMagCal(); // save new bias and scale values
+		void getMinMax(int16_t min[3], int16_t max[3]);
+
     private:
 		float mRes;  // mag resolution per LSB 
         uint8_t _address;
@@ -175,6 +182,7 @@ class MPU9250{
 		float _magCalX;
 		float _magCalY;
 		float _magCalZ;
+		int _calCount = 0;
 		static double _mag_coef;
 
         // SPI constants
@@ -275,6 +283,11 @@ class MPU9250{
         const int16_t tY[3] = {1,  0,  0};
         const int16_t tZ[3] = {0,  0, -1};
 
+		// calibration
+		int16_t mmax[3] = { -9999 ,-9999 ,-9999 };
+		int16_t mmin[3] = { 9999 ,9999 ,9999 };
+		volatile boolean flagCalibrate;
+		
 		// for self test
 		int setGyroRange(mpu9250_gyro_range gyroRange);
 		int setAccelRange(mpu9250_accel_range accelRange);
